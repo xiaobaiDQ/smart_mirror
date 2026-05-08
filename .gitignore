@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+node_modules/
+dist/
+.DS_Store
+*.log
+backend/models/
+NeteaseCloudMusicApi/
+*.egg-info/
+build/

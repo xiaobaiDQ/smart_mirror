@@ -1,0 +1,74 @@
+/* animations.css — 粒子 / 弹窗 / keyframes */
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.25; }
+}
+
+@keyframes scan {
+  0%   { top: -120px; }
+  100% { top: 100%;  }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%      { transform: scale(1.6); opacity: 0.4; }
+}
+
+@keyframes dot {
+  0%, 80%, 100% { transform: translateY(0);   opacity: 0.4; }
+  40%            { transform: translateY(-6px); opacity: 1; }
+}
+
+@keyframes fadeInOut {
+  0%   { opacity: 0; transform: translate(-50%, -8px); }
+  20%  { opacity: 1; transform: translate(-50%, 0); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ---- 背景粒子 ---- */
+.bg-particles {
+  position: absolute; inset: 0;
+  pointer-events: none; overflow: hidden;
+}
+.bg-particles span {
+  position: absolute;
+  width: 2px; height: 2px; border-radius: 50%;
+  background: var(--neon);
+  box-shadow: 0 0 6px var(--neon);
+  left: calc(var(--r) * 100%);
+  top: 110%;
+  animation: rise calc(8s + var(--i) * 0.3s) linear infinite;
+  animation-delay: calc(var(--i) * -0.25s);
+  opacity: 0.6;
+}
+.bg-particles span:nth-child(3n)   { background: var(--neon-violet); box-shadow: 0 0 6px var(--neon-violet); }
+.bg-particles span:nth-child(5n+1) { background: var(--neon-pink);   box-shadow: 0 0 6px var(--neon-pink); }
+
+@keyframes rise {
+  0%   { transform: translateY(0)     scale(1);   opacity: 0; }
+  10%  { opacity: 0.8; }
+  100% { transform: translateY(-120vh) scale(0.4); opacity: 0; }
+}
+
+/* ---- AI 弹窗内部粒子 ---- */
+.ai-particles {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+}
+.ai-particles span {
+  position: absolute;
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--neon);
+  box-shadow: 0 0 6px var(--neon);
+  left: calc(var(--i) * 5.5%);
+  top: 100%;
+  animation: floatUp 3.5s ease-in infinite;
+  animation-delay: calc(var(--i) * -0.18s);
+  opacity: 0.75;
+}
+@keyframes floatUp {
+  0%   { transform: translateY(0)   scale(1);   opacity: 0; }
+  10%  { opacity: 0.9; }
+  100% { transform: translateY(-180px) scale(0.2); opacity: 0; }
+}

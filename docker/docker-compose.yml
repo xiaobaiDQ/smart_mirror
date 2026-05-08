@@ -1,0 +1,34 @@
+# 树莓派 4B (arm64) 部署
+# 使用: cd docker && docker compose up -d --build
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    image: smart-mirror-backend:latest
+    container_name: smart-mirror-backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    ports:
+      - "8000:8000"
+    # 映射音频设备 (麦克风 / 扬声器)
+    devices:
+      - "/dev/snd:/dev/snd"
+    group_add:
+      - audio
+    volumes:
+      - ../music:/app/../music
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    image: smart-mirror-frontend:latest
+    container_name: smart-mirror-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
