@@ -203,6 +203,9 @@ async def handle_user_text(text: str) -> None:
             {"type": "ai_reply", "question": corrected, "reply": reply, "action": action}
         )
         log.info("AI ai_reply broadcasted")
+        # TTS 朗读回复
+        if reply and action != "dismiss":
+            asyncio.create_task(executor.tts(reply))
 
     from .asr_handler import asr_handler
 
@@ -251,3 +254,5 @@ async def _weather_then_reply(executor, manager, question, payload):
     await manager.broadcast(
         {"type": "ai_reply", "question": question, "reply": real_reply, "action": "weather"}
     )
+    # TTS 朗读天气
+    asyncio.create_task(executor.tts(real_reply))

@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
     fire_and_forget(_weather_loop(), "weather-loop")
     fire_and_forget(_time_loop(), "time-loop")
     if settings.ASR_AUTO_START:
-        log.info("启动本地 Whisper ASR mic_loop")
+        log.info("启动讯飞在线 ASR mic_loop")
         mic_task = fire_and_forget(asr_handler.mic_loop(), "mic-loop")
         set_mic_task(mic_task)
     else:
@@ -73,7 +73,7 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"ok": True, "awake": asr_handler.is_awake}
+    return {"ok": True, "awake": asr_handler.is_awake, "ws_clients": len(manager.active)}
 
 
 @app.get("/api/weather")

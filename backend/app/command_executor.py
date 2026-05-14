@@ -38,7 +38,6 @@ class CommandExecutor:
                 "cover": "",
             }
         }
-        self._tts_lock = asyncio.Lock()
         # 最近一次高德天气数据 (ai_handler 会读取以给大模型提供上下文)
         self.last_weather: dict[str, Any] = {}
         # 动态城市 adcode (优先级: payload > 此变量 > settings.AMAP_CITY_ADCODE)
@@ -193,52 +192,64 @@ class CommandExecutor:
         cover = ""
         song_id = None
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # 搜索歌曲（取多条以备 VIP 跳过）
-                search = await client.get(
-                    f"{settings.NETEASE_API_BASE}/search",
-                    params={"keywords": keyword, "limit": 20, "type": 1},
-                )
-                sdata = search.json()
-                songs = sdata.get("result", {}).get("songs", [])
-                if not songs:
-                    log.warning("未搜索到歌曲: %s", keyword)
+        # 最多重试 2 次（等待网易云 API 恢复）
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # 搜索歌曲（取多条以备 VIP 跳过）
+                    search = await client.get(
+                        f"{settings.NETEASE_API_BASE}/search",
+                        params={"keywords": keyword, "limit": 20, "type": 1},
+                    )
+                    if search.status_code >= 500:
+                        raise httpx.HTTPStatusError("API 不可用", request=search.request, response=search)
+                    sdata = search.json()
+                    songs = sdata.get("result", {}).get("songs", [])
+                    if not songs:
+                        log.warning("未搜索到歌曲: %s", keyword)
+                        return
+
+                    # 逐首尝试获取可用播放链接
+                    for idx, song in enumerate(songs):
+                        sid = song.get("id")
+                        url = await self._get_play_url(client, sid)
+                        if url:
+                            song_id = sid
+                            title = song.get("name") or keyword
+                            artists = song.get("artists") or song.get("ar") or []
+                            artist = artists[0].get("name", "") if artists else ""
+                            album = song.get("album") or song.get("al") or {}
+                            cover = album.get("picUrl") or ""
+                            play_url = url
+                            if idx > 0:
+                                log.info("第1首需VIP，跳到第%d首: %s - %s", idx + 1, title, artist)
+                            break
+                        else:
+                            sname = song.get("name", "?")
+                            log.debug("第%d首 [%s] 无可用链接，跳过", idx + 1, sname)
+
+                    # 搜索成功就跳出重试循环
+                    break
+
+            except Exception as e:  # noqa: BLE001
+                if attempt < 2:
+                    log.warning("网易云 API 请求失败 (第%d次，3s后重试): %s", attempt + 1, e)
+                    await asyncio.sleep(3)
+                else:
+                    log.error("网易云音乐 API 失败（已重试3次）: %s", e)
                     return
 
-                # 逐首尝试获取可用播放链接
-                for idx, song in enumerate(songs):
-                    sid = song.get("id")
-                    url = await self._get_play_url(client, sid)
-                    if url:
-                        song_id = sid
-                        title = song.get("name") or keyword
-                        artists = song.get("artists") or song.get("ar") or []
-                        artist = artists[0].get("name", "") if artists else ""
-                        album = song.get("album") or song.get("al") or {}
-                        cover = album.get("picUrl") or ""
-                        play_url = url
-                        if idx > 0:
-                            log.info("第1首需VIP，跳到第%d首: %s - %s", idx + 1, title, artist)
-                        break
-                    else:
-                        sname = song.get("name", "?")
-                        log.debug("第%d首 [%s] 无可用链接，跳过", idx + 1, sname)
-
-                # 所有结果都无链接
-                if not play_url:
-                    song = songs[0]
-                    song_id = song.get("id")
-                    title = song.get("name") or keyword
-                    artists = song.get("artists") or song.get("ar") or []
-                    artist = artists[0].get("name", "") if artists else ""
-                    album = song.get("album") or song.get("al") or {}
-                    cover = album.get("picUrl") or ""
-                    log.warning("所有搜索结果均无可用播放链接(VIP): %s", title)
-
-        except Exception as e:  # noqa: BLE001
-            log.error("网易云音乐 API 失败: %s", e)
-            return
+        if not play_url:
+            # 所有结果都无链接
+            if songs:
+                song = songs[0]
+                song_id = song.get("id")
+                title = song.get("name") or keyword
+                artists = song.get("artists") or song.get("ar") or []
+                artist = artists[0].get("name", "") if artists else ""
+                album = song.get("album") or song.get("al") or {}
+                cover = album.get("picUrl") or ""
+                log.warning("所有搜索结果均无可用播放链接(VIP): %s", title)
 
         self.state["music"] = {
             "playing": bool(play_url),
@@ -369,9 +380,16 @@ class CommandExecutor:
     # TTS
     # ------------------------------------------------------------------
     async def tts(self, text: str) -> None:
+        """通过 WebSocket 通知前端使用 Web Speech API 朗读。"""
         if not text:
             return
-        log.info("TTS 已关闭，仅前端弹窗显示: %s", text)
+        from .websocket_server import manager
+        from .asr_handler import asr_handler
+        estimated_seconds = max(len(text) * 0.3, 3.0)
+        asr_handler.mute_for(estimated_seconds + 2.0)
+        asr_handler.mark_tts_output(text, estimated_seconds + 5.0)
+        log.info("TTS → 前端: %s", text[:50])
+        await manager.broadcast({"type": "tts_speak", "text": text})
 
 
 executor = CommandExecutor()

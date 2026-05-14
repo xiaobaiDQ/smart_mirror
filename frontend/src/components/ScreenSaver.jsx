@@ -34,12 +34,6 @@ export default function ScreenSaver() {
 
   return (
     <div className="screensaver">
-      <div className="scanline" />
-      <div className="hud-corner tl" />
-      <div className="hud-corner tr" />
-      <div className="hud-corner bl" />
-      <div className="hud-corner br" />
-
       <div className="clock neon-text">
         <span>{hh}</span>
         <span className="colon">:</span>

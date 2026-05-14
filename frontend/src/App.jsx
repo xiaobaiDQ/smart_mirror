@@ -3,19 +3,39 @@
  * 顶层：连接 WebSocket，渲染屏保 + AI 弹窗 + 音乐控件 + 背景粒子。
  * 提供一个开发用输入框方便手动触发 AI（生产可移除）。
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import ScreenSaver from './components/ScreenSaver.jsx';
 import AIChatPopup from './components/AIChatPopup.jsx';
 import MusicControl from './components/MusicControl.jsx';
 import VoiceListener from './components/VoiceListener.jsx';
 import wsService from './components/WebSocketService.js';
+import { useWebSocket } from './components/WebSocketService.js';
 
 export default function App() {
   const [devText, setDevText] = useState('');
 
   useEffect(() => {
     wsService.connect();
+    // 调试：打印所有收到的 WS 消息
+    const unsub = wsService.on('*', (data) => {
+      console.log('[WS MSG]', data.type, data);
+    });
+    return unsub;
   }, []);
+
+  // TTS: 通过 Web Speech API 朗读后端发来的文本
+  useWebSocket('tts_speak', useCallback((d) => {
+    if (!window.speechSynthesis) {
+      console.warn('[TTS] Web Speech API not supported');
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(d.text);
+    utterance.lang = 'zh-CN';
+    const voices = speechSynthesis.getVoices();
+    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+    speechSynthesis.speak(utterance);
+  }, []));
 
   const sendDev = (e) => {
     e.preventDefault();
@@ -31,13 +51,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="bg-grid" />
-      <div className="bg-particles">
-        {Array.from({ length: 40 }).map((_, i) => (
-          <span key={i} style={{ '--i': i, '--r': Math.random() }} />
-        ))}
-      </div>
-
       <ScreenSaver />
       <AIChatPopup />
       <MusicControl />

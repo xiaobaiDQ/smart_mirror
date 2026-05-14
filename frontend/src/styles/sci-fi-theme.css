@@ -1,16 +1,14 @@
-/* sci-fi-theme.css — 科幻风格全局样式 */
+/* sci-fi-theme.css — 简洁深色主题（树莓派优化版） */
 
 :root {
-  --bg-0: #02060d;
-  --bg-1: #05101c;
-  --neon: #00eaff;
-  --neon-2: #7afcff;
-  --neon-pink: #ff3aa2;
-  --neon-violet: #8a5bff;
-  --text: #d6f6ff;
-  --muted: #7a98a8;
-  --glass: rgba(10, 28, 44, 0.45);
-  --glass-border: rgba(0, 234, 255, 0.35);
+  --bg-0: #0a0e1a;
+  --bg-1: #0d1220;
+  --accent: #5ba8c8;
+  --accent-light: #7ec8e8;
+  --text: #ffffff;
+  --muted: #b0b8c4;
+  --glass-bg: rgba(15, 25, 40, 0.85);
+  --glass-border: rgba(100, 140, 180, 0.3);
 }
 
 * { box-sizing: border-box; }
@@ -27,46 +25,24 @@ html, body, #root {
 .app {
   position: relative;
   width: 100vw; height: 100vh;
-  background:
-    radial-gradient(ellipse at 20% 10%, rgba(0,234,255,0.10), transparent 60%),
-    radial-gradient(ellipse at 80% 90%, rgba(138,91,255,0.12), transparent 60%),
-    linear-gradient(180deg, var(--bg-0), var(--bg-1));
+  background: linear-gradient(180deg, var(--bg-0), var(--bg-1));
 }
 
-/* ----- Grid + particles background ----- */
-.bg-grid {
-  position: absolute; inset: 0;
-  background-image:
-    linear-gradient(rgba(0, 234, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 234, 255, 0.08) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 80%);
-  pointer-events: none;
-}
-
-/* ----- Neon text ----- */
+/* ----- Text styles (no text-shadow) ----- */
 .neon-text {
-  color: #fff;
-  text-shadow:
-    0 0 4px var(--neon),
-    0 0 12px var(--neon),
-    0 0 28px rgba(0,234,255,0.5);
+  color: var(--text);
 }
 .neon-text-soft {
-  color: var(--neon-2);
-  text-shadow: 0 0 6px rgba(122,252,255,0.6);
+  color: var(--muted);
   letter-spacing: 0.1em;
 }
 
-/* ----- Glass panel ----- */
+/* ----- Glass panel (no glow, simple border) ----- */
 .glass {
-  background: var(--glass);
+  background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    0 0 18px rgba(0, 234, 255, 0.12),
-    inset 0 0 18px rgba(0, 234, 255, 0.06);
+  border-radius: 12px;
+  padding: 16px;
 }
 
 /* ----- Screensaver layout ----- */
@@ -80,47 +56,29 @@ html, body, #root {
   font-weight: 700;
   letter-spacing: 0.04em;
   display: flex; align-items: baseline; gap: 0.05em;
+  color: var(--text);
 }
 .clock .colon { animation: blink 1s step-end infinite; }
 .clock .seconds {
   font-size: 0.3em; margin-left: 0.3em; opacity: 0.75;
-  color: var(--neon-2); text-shadow: 0 0 8px var(--neon-2);
+  color: var(--muted);
 }
 .date {
   margin-top: 0.5rem;
   font-size: clamp(14px, 1.6vw, 22px);
+  color: var(--muted);
 }
 .weather-card {
   position: absolute; top: 4vh; right: 4vw;
-  min-width: 220px; padding: 18px 22px;
-  border-radius: 14px;
+  min-width: 220px;
   pointer-events: auto;
 }
 .w-city { font-size: 14px; color: var(--muted); letter-spacing: 0.15em; }
 .w-main { display: flex; align-items: baseline; gap: 14px; margin: 8px 0; }
-.w-temp { font-size: 44px; font-weight: 700; color: #fff; text-shadow: 0 0 10px var(--neon); }
-.w-desc { font-size: 16px; color: var(--neon-2); }
+.w-temp { font-size: 44px; font-weight: 700; color: var(--text); }
+.w-desc { font-size: 16px; color: var(--accent-light); }
 .w-sub  { font-size: 12px; color: var(--muted); }
 .w-loading { color: var(--muted); }
-
-/* ----- HUD corners ----- */
-.hud-corner {
-  position: absolute; width: 28px; height: 28px;
-  border: 2px solid var(--neon);
-  box-shadow: 0 0 12px var(--neon);
-}
-.hud-corner.tl { top: 18px; left: 18px; border-right: 0; border-bottom: 0; }
-.hud-corner.tr { top: 18px; right: 18px; border-left: 0; border-bottom: 0; }
-.hud-corner.bl { bottom: 18px; left: 18px; border-right: 0; border-top: 0; }
-.hud-corner.br { bottom: 18px; right: 18px; border-left: 0; border-top: 0; }
-
-/* ----- Scanline ----- */
-.scanline {
-  position: absolute; left: 0; right: 0; height: 120px;
-  background: linear-gradient(180deg, transparent, rgba(0,234,255,0.12), transparent);
-  animation: scan 6s linear infinite;
-  pointer-events: none;
-}
 
 /* ----- AI Popup (左侧竖排) ----- */
 .ai-popup {
@@ -134,18 +92,22 @@ html, body, #root {
 .ai-popup-inner {
   position: relative;
   width: 280px; max-height: 70vh;
-  padding: 22px 24px; border-radius: 18px; overflow-y: auto;
-  background: linear-gradient(135deg, rgba(10,28,44,0.7), rgba(20,10,44,0.55));
+  overflow-y: auto;
+  background: var(--glass-bg);
   border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 22px 24px;
 }
 .ai-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.ai-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--neon);
-  box-shadow: 0 0 10px var(--neon); animation: pulse 1.2s ease-in-out infinite; }
-.ai-title { font-size: 12px; }
+.ai-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.ai-dot.disconnected { background: #ff4444; }
+.ai-title { font-size: 12px; color: var(--muted); }
+.ai-status-badge { margin-left: auto; font-size: 10px; padding: 2px 8px; border-radius: 8px;
+  background: rgba(91, 168, 200, 0.15); border: 1px solid var(--glass-border); color: var(--accent-light); }
 .ai-q { color: var(--muted); font-size: 15px; margin-bottom: 12px; }
 .ai-q.ai-raw { font-size: 13px; opacity: 0.55; margin-bottom: 6px; }
 
-/* Pipeline step indicator (竖排) */
+/* Pipeline step indicator */
 .ai-pipeline {
   display: flex; gap: 4px; align-items: center; margin-bottom: 12px;
   font-size: 14px;
@@ -156,21 +118,15 @@ html, body, #root {
 .ai-pipeline .pipe-step.done { opacity: 0.5; filter: grayscale(0); }
 .ai-pipeline .pipe-step.active {
   opacity: 1; filter: grayscale(0);
-  animation: step-pulse 1s ease-in-out infinite;
 }
 .ai-pipeline .pipe-step + .pipe-step::before {
   content: '›'; margin-right: 4px; color: var(--muted); opacity: 0.4; font-size: 12px;
 }
-@keyframes step-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-}
-.ai-answer { font-size: 16px; line-height: 1.6; color: #fff; text-shadow: 0 0 8px rgba(0,234,255,0.25); }
+.ai-answer { font-size: 16px; line-height: 1.6; color: var(--text); }
 .ai-thinking { display: flex; align-items: center; gap: 10px; font-size: 16px; }
 .dots { display: inline-flex; gap: 4px; }
 .dots i {
-  width: 8px; height: 8px; border-radius: 50%; background: var(--neon);
-  box-shadow: 0 0 8px var(--neon);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
   animation: dot 1.2s infinite ease-in-out;
 }
 .dots i:nth-child(2) { animation-delay: 0.2s; }
@@ -180,9 +136,9 @@ html, body, #root {
 .wake-flash {
   position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
   font-size: 14px; letter-spacing: 0.25em;
-  padding: 6px 16px; border: 1px solid var(--neon);
+  padding: 6px 16px; border: 1px solid var(--accent);
   border-radius: 999px; z-index: 20;
-  animation: fadeInOut 1.5s ease;
+  color: var(--text);
 }
 
 /* ----- Music bar ----- */
@@ -201,26 +157,24 @@ html, body, #root {
 .cover img { width: 100%; height: 100%; object-fit: cover; }
 .cover-ph {
   width: 100%; height: 100%;
-  background: linear-gradient(135deg, var(--neon-violet), var(--neon));
+  background: linear-gradient(135deg, #5b6b8a, var(--accent));
   opacity: 0.55;
 }
-.info .title { font-size: 15px; }
+.info .title { font-size: 15px; color: var(--text); }
 .info .artist { font-size: 12px; color: var(--muted); }
 .controls { display: flex; gap: 8px; }
 
-/* ----- Neon button ----- */
+/* ----- Button (simple, no glow) ----- */
 .btn-neon {
-  background: transparent; color: var(--neon);
-  border: 1px solid var(--neon);
+  background: transparent; color: var(--accent);
+  border: 1px solid var(--accent);
   padding: 8px 14px; border-radius: 8px;
   font-family: inherit; font-size: 14px; letter-spacing: 0.1em;
   cursor: pointer;
-  box-shadow: 0 0 8px rgba(0,234,255,0.35), inset 0 0 6px rgba(0,234,255,0.2);
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
 .btn-neon:hover:not(:disabled) {
-  background: rgba(0,234,255,0.12); color: #fff;
-  box-shadow: 0 0 18px var(--neon), inset 0 0 10px rgba(0,234,255,0.35);
+  background: rgba(91, 168, 200, 0.15); color: var(--text);
 }
 .btn-neon:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -233,12 +187,12 @@ html, body, #root {
 }
 .dev-input:hover, .dev-input:focus-within { opacity: 1; }
 .dev-input input {
-  background: var(--glass); color: var(--text);
+  background: var(--glass-bg); color: var(--text);
   border: 1px solid var(--glass-border);
   padding: 6px 12px; border-radius: 8px;
   font-family: inherit; font-size: 13px; outline: none; width: 280px;
 }
-.dev-input input:focus { border-color: var(--neon); box-shadow: 0 0 8px var(--neon); }
+.dev-input input:focus { border-color: var(--accent); }
 .dev-input .btn-neon { padding: 6px 12px; font-size: 12px; }
 
 /* ----- Voice listener (mic button) ----- */
@@ -249,24 +203,15 @@ html, body, #root {
 }
 .mic-btn { letter-spacing: 0.15em; font-size: 13px; padding: 10px 16px; }
 .voice-listener.on .mic-btn {
-  color: #fff; background: rgba(255, 58, 162, 0.2);
-  border-color: var(--neon-pink);
-  box-shadow: 0 0 14px var(--neon-pink), inset 0 0 8px rgba(255, 58, 162, 0.4);
-  animation: pulse-pink 1.4s ease-in-out infinite;
-}
-@keyframes pulse-pink {
-  0%,100% { box-shadow: 0 0 10px var(--neon-pink), inset 0 0 6px rgba(255,58,162,0.3); }
-  50%     { box-shadow: 0 0 22px var(--neon-pink), inset 0 0 12px rgba(255,58,162,0.6); }
+  color: var(--text); background: rgba(200, 80, 120, 0.2);
+  border-color: #c85078;
 }
 .voice-last {
-  font-size: 12px; color: var(--neon-2);
+  font-size: 12px; color: var(--accent-light);
   max-width: 320px; text-align: right;
-  text-shadow: 0 0 6px rgba(122,252,255,0.4);
 }
 .voice-interim {
   font-size: 12px; color: var(--muted);
   max-width: 320px; text-align: right; font-style: italic;
 }
-.voice-err { font-size: 11px; color: var(--neon-pink); opacity: 0.8; }
-
-/* ----- Music bar 放底部居中，留出左下空间 ----- */
+.voice-err { font-size: 11px; color: #e06070; opacity: 0.8; }

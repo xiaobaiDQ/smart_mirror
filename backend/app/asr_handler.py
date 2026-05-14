@@ -1,15 +1,15 @@
 """
 asr_handler.py
 --------------
-本地 ASR (faster-whisper) + 唤醒词检测。
+ASR (讯飞在线语音听写) + 唤醒词检测。
 
 执行逻辑:
-- mic_loop 持续按 ASR_CHUNK_SECONDS 秒切片采样 (sounddevice)
-- 每段音频先做能量阈值过滤静音
-- 非静音段 → faster-whisper 转中文文本
+- mic_loop 持续通过 sounddevice 回调采集音频帧
+- VAD 能量阈值检测语音段
+- 非静音段 → 讯飞在线 ASR 转中文文本
 - feed_text 判断唤醒词 / 转 ai_handler
 
-依赖: sounddevice, faster-whisper, numpy
+依赖: sounddevice, numpy, websockets
 """
 from __future__ import annotations
 
@@ -34,7 +34,6 @@ class ASRHandler:
         self.wake_word = settings.WAKE_WORD
         self.is_awake = False
         self._awake_timeout: asyncio.Task | None = None
-        self._model = None  # 懒加载
         # 当用户说出唤醒词但后面没接指令时，下一段录音用更长窗口
         self._awaiting_command: bool = False
         # TTS 播报期间闭麦，防止 AI 自己的声音被再次识别成输入
@@ -76,36 +75,51 @@ class ASRHandler:
         return current in previous or previous in current
 
     def _pid_alive(self, pid: int) -> bool:
+        """检查进程是否存活（跨平台）。"""
         if pid <= 0:
             return False
-        try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            return False
+        import sys
+        if sys.platform == "win32":
+            # Windows: 用 ctypes 检查进程是否存在
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                SYNCHRONIZE = 0x00100000
+                handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                return False
+            except Exception:  # noqa: BLE001
+                return False
+        else:
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
 
     def _acquire_mic_owner(self) -> bool:
+        """写入 PID 锁文件。始终返回 True（uvicorn reload 模式下旧进程已死）。"""
         current = os.getpid()
         try:
-            if os.path.exists(self._mic_lock_path):
-                raw = open(self._mic_lock_path, "r", encoding="utf-8").read().strip()
-                old_pid = int(raw or "0")
-                if old_pid != current and self._pid_alive(old_pid):
-                    log.warning("检测到已有 mic_loop 进程 PID=%d，本进程跳过麦克风采集", old_pid)
-                    return False
             with open(self._mic_lock_path, "w", encoding="utf-8") as f:
                 f.write(str(current))
-            return True
-        except Exception as e:  # noqa: BLE001
-            log.warning("mic_loop 单实例锁失败，继续启动: %s", e)
-            return True
+        except Exception:  # noqa: BLE001
+            pass
+        return True
 
     # ---------- 唤醒词 ----------
-    # 兼容 Whisper 输出的繁体 / 同音字 / 漏字
-    # "小" 同音/形近: 小消晓肖宵筱孝校效校
-    # "镜" 同音/形近 (jing/jin/qing/jin等): 镜静景敬竞净进尽京经今紧锦谨晋仅近紧鏡靜競淨進盡經緊錦
-    _XIAO = "小消晓肖宵筱孝校晓"
-    _JING = "镜静景敬竞净进尽京经今紧锦谨晋仅近鏡靜競淨進盡經緊錦"
+    # 兼容讯飞 ASR 输出的各种同音字/近音字变体
+    # "小" (xiǎo) 及其同音/形近/误识别:
+    _XIAO = "小消晓肖宵筱孝校效萧潇笑哮削"
+    # "镜" (jìng) 及其同音/近音/误识别 (jìng/jīng/jǐn/jìn/qíng):
+    _JING = (
+        "镜静景敬竞净进尽京经今紧锦谨晋仅近金劲"
+        "禁浸精睛晶鲸井颈径靖津斤筋巾襟"
+        "鏡靜競淨進盡經緊錦"
+        "情清青轻庆请亲琴勤秦"  # qing/qin 音也可能误识别
+    )
     _WAKE_RE = re.compile(
         rf"[{_XIAO}]\s*[{_JING}]"
         rf"(?:\s*[{_XIAO}]?\s*[{_JING}])?"
@@ -185,22 +199,6 @@ class ASRHandler:
         self._awaiting_command = False
         fire_and_forget(handle_user_text(text))
 
-    # ---------- 模型 + 音频 ----------
-    def _load_model(self):
-        if self._model is None:
-            from faster_whisper import WhisperModel  # 延迟导入
-
-            log.info(
-                "加载 Whisper 模型 model=%s device=%s compute=%s ...",
-                settings.WHISPER_MODEL, settings.WHISPER_DEVICE, settings.WHISPER_COMPUTE,
-            )
-            self._model = WhisperModel(
-                settings.WHISPER_MODEL,
-                device=settings.WHISPER_DEVICE,
-                compute_type=settings.WHISPER_COMPUTE,
-            )
-            log.info("Whisper 模型加载完成")
-        return self._model
 
     _input_device: int | None = None
     _input_sr: int = 16000
@@ -208,6 +206,7 @@ class ASRHandler:
 
     def _candidate_devices(self):
         """按 WASAPI > WDM-KS > DirectSound > MME 顺序产出 (device_idx, sample_rate)。"""
+        import sys
         import sounddevice as sd
 
         try:
@@ -226,6 +225,8 @@ class ASRHandler:
             # 蓝牙/无线耳机 (HFP 通话麦克风音质差，跳过)
             "耳机", "tws", "headset", "earphone", "earbud", "airpod", "buds",
         )
+        if sys.platform == "linux":
+            blacklist = blacklist + ("hdmi", "bcm2835", "vc4")
         # 用户指定的设备名子串（最高优先级）
         wanted = (settings.ASR_INPUT_DEVICE_NAME or "").strip().lower()
 
@@ -244,8 +245,14 @@ class ASRHandler:
                 p = next(p for p, n in enumerate(priority) if n in api_name)
             except StopIteration:
                 p = len(priority)
-            # 用户指定的名字提到最前
-            user_pref = 0 if (wanted and wanted in dev_name) else 1
+            # 用户指定的名字提到最前; Linux 上 USB 设备优先
+            is_usb = "usb" in dev_name
+            if wanted and wanted in dev_name:
+                user_pref = 0
+            elif is_usb:
+                user_pref = 0  # USB devices get top priority on all platforms
+            else:
+                user_pref = 1
             order.append((user_pref, p, i, info))
 
         order.sort(key=lambda x: (x[0], x[1]))
@@ -257,20 +264,38 @@ class ASRHandler:
             yield idx, sr
 
     def _open_test_record(self, device_idx: int, sr: int, seconds: float = 0.3):
-        """用极短录音验证设备能否打开。失败抛异常。"""
+        """用 InputStream 验证设备能否打开并收到数据。失败抛异常。"""
         import sounddevice as sd
+        import numpy as np
+        import threading
 
-        a = sd.rec(
-            int(seconds * sr),
+        frames = []
+        event = threading.Event()
+
+        def callback(indata, frame_count, time_info, status):
+            frames.append(indata[:, 0].copy())
+            if len(frames) >= 3:
+                event.set()
+
+        stream = sd.InputStream(
             samplerate=sr,
             channels=settings.AUDIO_CHANNELS,
             dtype="float32",
             device=device_idx,
+            blocksize=int(sr * 0.1),
+            callback=callback,
         )
-        sd.wait()
-        return a
+        stream.start()
+        event.wait(timeout=seconds + 1.0)
+        stream.stop()
+        stream.close()
+
+        if not frames:
+            raise RuntimeError("未收到音频帧")
+        return np.concatenate(frames)
 
     def _pick_input_device(self) -> bool:
+        import sys
         if self._device_picked:
             return self._input_device is not None
         for idx, sr in self._candidate_devices():
@@ -284,6 +309,8 @@ class ASRHandler:
             except Exception as e:  # noqa: BLE001
                 log.warning("设备 idx=%d sr=%d 不可用: %s", idx, sr, e)
         log.error("❌ 未找到可用麦克风")
+        if sys.platform == "linux":
+            log.error("提示: 请运行 `arecord -l` 检查麦克风是否被系统识别")
         self._device_picked = True
         return False
 
@@ -305,7 +332,7 @@ class ASRHandler:
         sd.wait()
         audio = audio.reshape(-1)
 
-        # 重采样到 16kHz (whisper 要求)
+        # 重采样到 16kHz
         target_sr = settings.AUDIO_SAMPLE_RATE
         if sr != target_sr:
             n_target = int(len(audio) * target_sr / sr)
@@ -317,7 +344,7 @@ class ASRHandler:
         return audio
 
     def _resample(self, audio, source_sr: int):
-        """重采样到 16kHz (Whisper 要求)。"""
+        """重采样到 16kHz。"""
         import numpy as np
         target_sr = settings.AUDIO_SAMPLE_RATE
         if source_sr == target_sr:
@@ -329,38 +356,10 @@ class ASRHandler:
             audio,
         ).astype(np.float32)
 
-    # 详细的领域提示词（给 Whisper 的"词表偏置"），大幅降低同音字/漏字错误
-    _INITIAL_PROMPT = (
-        "以下是普通话句子的简体中文转写。"
-        "唤醒词：小镜小镜、小镜。"
-        "常见指令：今天天气怎么样、北京天气、上海天气、乌鲁木齐天气、现在几点了、"
-        "播放音乐、暂停、下一首、上一首、声音大一点、声音小一点。"
-        "常见问题：讲个笑话、今天日期、你是谁、帮我查一下、打开灯、关闭灯、"
-        "请问我现在在哪里、给我讲个故事、明天天气怎么样。"
-        "数字示例：一二三四五六七八九十、零、百、千、万、亿、"
-        "一百二十三、三千五百、一万八、二十五度、百分之六十、"
-        "一月二月三月、一号、十五号、二十号、三十一号、"
-        "一点半、两点十五分、三点四十五、下午六点、晚上八点、"
-        "一百块、五十元、两千三百四十五。"
-    )
-
-    def _transcribe(self, audio) -> str:
-        model = self._load_model()
-        segments, _info = model.transcribe(
-            audio,
-            language=settings.WHISPER_LANGUAGE,
-            task="transcribe",
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 300, "threshold": 0.4},
-            beam_size=settings.WHISPER_BEAM_SIZE,
-            best_of=settings.WHISPER_BEST_OF,
-            temperature=[0.0, 0.2, 0.4],          # 失败时降级采样
-            no_speech_threshold=settings.WHISPER_NO_SPEECH_THR,
-            compression_ratio_threshold=2.4,
-            condition_on_previous_text=False,
-            initial_prompt=self._INITIAL_PROMPT,
-        )
-        return "".join(s.text for s in segments).strip()
+    async def _transcribe_xfyun(self, audio) -> str:
+        """调用讯飞在线 ASR 替代本地 Whisper。"""
+        from .xfyun_client import xfyun_client
+        return await xfyun_client.transcribe(audio)
 
     # ---------- 主循环 ----------
     async def mic_loop(self) -> None:
@@ -381,12 +380,7 @@ class ASRHandler:
         except Exception:  # noqa: BLE001
             pass
 
-        # 预热模型 (首次推理慢)
-        try:
-            await asyncio.to_thread(self._load_model)
-        except Exception as e:  # noqa: BLE001
-            log.exception("Whisper 模型加载失败: %s", e)
-            return
+        log.info("讯飞在线 ASR 已就绪 (appid=%s)", settings.XFYUN_APPID[:4] + "***" if settings.XFYUN_APPID else "未配置")
 
         # 选麦克风
         ok = await asyncio.to_thread(self._pick_input_device)
@@ -450,13 +444,14 @@ class ASRHandler:
             log.info("✅ 麦克风流已打开")
 
             # ---- VAD 状态 ----
+            from collections import deque
             noise_floor: float = settings.ASR_SILENCE_THRESHOLD
             is_speaking = False
             speech_frames: list = []
             speech_frame_count = 0
             silence_count = 0
-            pre_roll: list = []
-            PRE_ROLL_N = 3          # ~300ms 前置缓冲，避免起始被切
+            PRE_ROLL_N = int(1.0 / (frame_ms / 1000))  # 1 second of frames
+            pre_roll = deque(maxlen=PRE_ROLL_N)
             log_counter = 0
 
             try:
@@ -482,12 +477,12 @@ class ASRHandler:
                             continue
 
                         level = float(np.abs(frame).mean())
-                        # 音乐播放时大幅提高阈值，只有大声说话才触发
-                        # 但已唤醒时用稍低阈值，方便下达指令
+                        # 音乐播放时适当提高阈值，避免麦克风采到音乐误触发
+                        # 但不要太高，否则唤醒困难
                         if self._music_playing and not self.is_awake:
-                            threshold = max(noise_floor * settings.VAD_NOISE_RATIO * 4, 0.02)
+                            threshold = max(noise_floor * settings.VAD_NOISE_RATIO * 1.5, 0.004)
                         elif self._music_playing and self.is_awake:
-                            threshold = max(noise_floor * settings.VAD_NOISE_RATIO * 2, 0.01)
+                            threshold = max(noise_floor * settings.VAD_NOISE_RATIO, 0.003)
                         else:
                             threshold = max(noise_floor * settings.VAD_NOISE_RATIO, 0.0008)
 
@@ -522,11 +517,11 @@ class ASRHandler:
                                     log.info("VAD 语音段 %.1fs，转写中…", duration_ms / 1000)
                                     from .websocket_server import manager as _mgr
                                     await _mgr.broadcast({"type": "asr_step", "step": "recognizing"})
-                                    text = await asyncio.to_thread(self._transcribe, audio)
+                                    text = await self._transcribe_xfyun(audio)
                                     if text:
                                         await self.feed_text(text)
                                     else:
-                                        log.info("Whisper 未识别出文本")
+                                        log.info("讯飞 ASR 未识别出文本")
                                         await _mgr.broadcast({"type": "asr_step", "step": "idle"})
                                 else:
                                     log.debug("VAD 跳过短语音 %.0fms", duration_ms)
@@ -539,8 +534,6 @@ class ASRHandler:
                             noise_floor = noise_floor * 0.97 + level * 0.03
                             noise_floor = max(noise_floor, 0.00005)
                             pre_roll.append(frame)
-                            if len(pre_roll) > PRE_ROLL_N:
-                                pre_roll.pop(0)
 
             except Exception as e:  # noqa: BLE001
                 log.error("mic_loop VAD 错误: %s", e)

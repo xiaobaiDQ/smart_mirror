@@ -25,14 +25,12 @@ class Settings(BaseSettings):
     # ---- 唤醒词 ----
     WAKE_WORD: str = "小镜小镜"
 
-    # ---- 本地 ASR (faster-whisper) ----
-    WHISPER_MODEL: str = "models/pengzhendong/faster-whisper-small"  # 本地 small 模型路径
-    WHISPER_COMPUTE: str = "int8"         # int8 / int8_float16 / float16 / float32
-    WHISPER_DEVICE: str = "cpu"           # cpu / cuda
-    WHISPER_LANGUAGE: str = "zh"
-    WHISPER_BEAM_SIZE: int = 5            # 1=最快, 5=更准 (CPU int8 small 模型 6s 音频约 2-3 秒)
-    WHISPER_BEST_OF: int = 5              # 采样候选数量，越高越稳定
-    WHISPER_NO_SPEECH_THR: float = 0.35   # 静音判定 (0.6 默认, 降低以保留更多句子)
+    # ---- 讯飞在线 ASR ----
+    XFYUN_APPID: str = ""
+    XFYUN_API_KEY: str = ""
+    XFYUN_API_SECRET: str = ""
+    XFYUN_LANGUAGE: str = "zh_cn"
+    XFYUN_DOMAIN: str = "iat"
     AUDIO_SAMPLE_RATE: int = 16000
     AUDIO_CHANNELS: int = 1
     ASR_CHUNK_SECONDS: float = 2.0          # 扫描唤醒词的窗口 (越短响应越快)
@@ -47,7 +45,7 @@ class Settings(BaseSettings):
     VAD_NOISE_RATIO: float = 3.0         # 语音判定 = 噪声底噪 × 此倍数
     VAD_SILENCE_FRAMES: int = 8          # 连续静音帧数 → 语音结束 (8×100ms=800ms)
     VAD_MIN_SPEECH_MS: int = 400         # 最短语音段 (过短丢弃)
-    VAD_MAX_SPEECH_S: float = 12.0       # 最长语音段 (超时截断转写)
+    VAD_MAX_SPEECH_S: float = 30.0       # 最长语音段 (超时截断转写)
 
     # ---- ListenHub ASR (备用，未使用) ----
     LISTENHUB_API_KEY: str = ""
@@ -64,11 +62,11 @@ class Settings(BaseSettings):
     AI_SYSTEM_PROMPT: str = (
         "你是智能镜面语音助手『小镜』，性格活泼友善，像朋友一样跟用户聊天。\n\n"
         "## 重要：语音纠错\n"
-        "用户输入来自 Whisper 语音识别，经常出现同音字/近音字/繁体字/漏字错误。\n"
+        "用户输入来自讯飞语音识别，可能出现同音字/近音字错误。\n"
         "你必须先根据上下文和发音相似性，猜测用户真正想说的话，然后基于纠正后的含义回答。\n"
         "常见误识别举例：\n"
+        "  '小静' / '小金' / '小劲' / '小进' / '小精' / '小景' / '效进' → '小镜'（唤醒词，忽略）\n"
         "  '再劳你' / '在老你' → '在哪里'\n"
-        "  '盡小盡' / '小靜' / '小景' / '效进' → '小镜小镜'（唤醒词，忽略）\n"
         "  '怎麼樣' → '怎么样'\n"
         "  '程度' / '成落' / '成功' → '成都'（城市名）\n"
         "  '今天程度的天气' → '今天成都的天气'\n"
